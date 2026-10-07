@@ -1,0 +1,218 @@
+{% comment %}
+  MULTI-SYSTEM PERSONALIZATION LOGIC
+  Systems:
+  1. CRM/customer profile
+  2. E-commerce/order system
+  3. Loyalty system
+  4. Recommendation engine
+  5. Customer support system
+{% endcomment %}
+
+{% assign first_name = ${first_name} | default: "there" %}
+{% assign customer_id = ${user_id} %}
+{% assign country = ${country} | default: "NG" %}
+{% assign language = ${language} | default: "en" %}
+
+{% comment %}
+  --------------------------------------------------
+  1. DETERMINE CUSTOMER SEGMENT
+  --------------------------------------------------
+{% endcomment %}
+
+{% assign customer_segment = "standard" %}
+
+{% if ${custom_attribute.${lifetime_value}} >= 500000 %}
+  {% assign customer_segment = "vip" %}
+{% elsif ${custom_attribute.${lifetime_value}} >= 100000 %}
+  {% assign customer_segment = "high_value" %}
+{% elsif ${custom_attribute.${lifetime_value}} >= 25000 %}
+  {% assign customer_segment = "active" %}
+{% endif %}
+
+
+{% comment %}
+  --------------------------------------------------
+  2. CHECK CUSTOMER BEHAVIOR
+  --------------------------------------------------
+{% endcomment %}
+
+{% assign recently_purchased = false %}
+{% assign cart_abandoned = false %}
+{% assign highly_engaged = false %}
+
+{% if ${custom_attribute.${last_purchase_date}} != blank %}
+  {% assign recently_purchased = true %}
+{% endif %}
+
+{% if ${custom_attribute.${cart_value}} > 0 %}
+  {% assign cart_abandoned = true %}
+{% endif %}
+
+{% if ${custom_attribute.${email_engagement_score}} >= 80 %}
+  {% assign highly_engaged = true %}
+{% endif %}
+
+
+{% comment %}
+  --------------------------------------------------
+  3. FETCH RECOMMENDATIONS FROM EXTERNAL SYSTEM
+  --------------------------------------------------
+{% endcomment %}
+
+{% connected_content
+  https://recommendations.example.com/api/v1/users/{{customer_id}}/recommendations
+  :method get
+  :headers {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  }
+  :cache_max_age 300
+  :save recommendation_response
+%}
+
+{% assign recommended_product = recommendation_response.products[0] %}
+
+
+{% comment %}
+  --------------------------------------------------
+  4. FETCH LOYALTY INFORMATION
+  --------------------------------------------------
+{% endcomment %}
+
+{% connected_content
+  https://loyalty.example.com/api/v1/customers/{{customer_id}}
+  :method get
+  :headers {
+    "Authorization": "Bearer YOUR_API_KEY"
+  }
+  :cache_max_age 300
+  :save loyalty_response
+%}
+
+{% assign loyalty_points = loyalty_response.points | default: 0 %}
+{% assign loyalty_tier = loyalty_response.tier | default: "Member" %}
+
+
+{% comment %}
+  --------------------------------------------------
+  5. FETCH CUSTOMER SUPPORT STATUS
+  --------------------------------------------------
+{% endcomment %}
+
+{% connected_content
+  https://support.example.com/api/customers/{{customer_id}}/status
+  :method get
+  :headers {
+    "Authorization": "Bearer YOUR_API_KEY"
+  }
+  :cache_max_age 300
+  :save support_response
+%}
+
+{% assign open_ticket = support_response.open_ticket %}
+
+
+{% comment %}
+  --------------------------------------------------
+  6. PERSONALIZATION PRIORITY ENGINE
+  --------------------------------------------------
+{% endcomment %}
+
+{% assign message_type = "general" %}
+
+{% comment %}
+  SUPPORT ISSUE HAS HIGHEST PRIORITY.
+  Don't promote products if the customer has an unresolved issue.
+{% endcomment %}
+
+{% if open_ticket == true %}
+
+  {% assign message_type = "support" %}
+
+{% elsif cart_abandoned == true %}
+
+  {% assign message_type = "abandoned_cart" %}
+
+{% elsif recently_purchased == true %}
+
+  {% assign message_type = "post_purchase" %}
+
+{% elsif customer_segment == "vip" %}
+
+  {% assign message_type = "vip" %}
+
+{% elsif highly_engaged == true %}
+
+  {% assign message_type = "engagement" %}
+
+{% endif %}
+
+
+{% comment %}
+  --------------------------------------------------
+  7. GENERATE FINAL PERSONALIZED MESSAGE
+  --------------------------------------------------
+{% endcomment %}
+
+{% if message_type == "support" %}
+
+  Hi {{first_name}},
+  
+  We noticed you have an ongoing request with our support team.
+  We're currently working on it and will keep you updated.
+
+{% elsif message_type == "abandoned_cart" %}
+
+  Hi {{first_name}},
+  
+  You left something behind. Your cart is still waiting for you.
+
+  {% if loyalty_points > 0 %}
+    You currently have {{loyalty_points}} loyalty points available.
+  {% endif %}
+
+  Complete your purchase whenever you're ready.
+
+{% elsif message_type == "post_purchase" %}
+
+  Hi {{first_name}},
+  
+  Thanks for your recent purchase!
+
+  {% if recommended_product %}
+    Based on your purchase, you may also like:
+    {{recommended_product.name}}
+  {% endif %}
+
+{% elsif message_type == "vip" %}
+
+  Hi {{first_name}},
+  
+  As a {{loyalty_tier}} customer, we have something special for you.
+
+  {% if recommended_product %}
+    We selected {{recommended_product.name}} specifically for you.
+  {% endif %}
+
+{% elsif message_type == "engagement" %}
+
+  Hi {{first_name}},
+  
+  Since you've been actively engaging with us, we thought you might
+  be interested in something new.
+
+  {% if recommended_product %}
+    Recommended for you: {{recommended_product.name}}
+  {% endif %}
+
+{% else %}
+
+  Hi {{first_name}},
+  
+  We have something new we think you'll love.
+
+  {% if recommended_product %}
+    Check out {{recommended_product.name}}.
+  {% endif %}
+
+{% endif %}

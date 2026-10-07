@@ -1,0 +1,367 @@
+{% comment %}
+============================================================
+BRAZE MULTI-SYSTEM INTEGRATION & PERSONALIZATION MODEL
+============================================================
+
+SYSTEMS
+1. Braze       → Core user profile
+2. CRM         → Customer/account information
+3. E-commerce  → Orders and cart information
+4. Loyalty     → Points and membership tier
+5. Support     → Customer service status
+6. Recommendation Engine → Personalized products/content
+
+FLOW
+Braze Profile
+      ↓
+External Systems
+      ↓
+Data Validation
+      ↓
+Data Normalization
+      ↓
+Priority / Decision Engine
+      ↓
+Personalized Content
+============================================================
+{% endcomment %}
+
+
+{% comment %}
+============================================================
+1. BRAZE CORE USER PROFILE
+============================================================
+{% endcomment %}
+
+{% assign user_id = ${user_id} %}
+{% assign first_name = ${first_name} | default: "Customer" %}
+{% assign email = ${email_address} | default: "" %}
+
+{% assign first_name = first_name | strip %}
+{% assign email = email | strip | downcase %}
+
+
+{% comment %}
+============================================================
+2. BASIC USER VALIDATION
+============================================================
+{% endcomment %}
+
+{% assign valid_user = true %}
+
+{% if user_id == blank %}
+  {% assign valid_user = false %}
+{% endif %}
+
+{% if email == blank %}
+  {% assign valid_user = false %}
+{% endif %}
+
+
+{% comment %}
+============================================================
+3. CRM INTEGRATION
+============================================================
+Retrieve customer information from CRM.
+============================================================
+{% endcomment %}
+
+{% connected_content
+  https://crm.example.com/api/customers/{{user_id}}
+  :method get
+  :headers {
+    "Authorization": "Bearer YOUR_CRM_API_KEY",
+    "Content-Type": "application/json"
+  }
+  :cache_max_age 300
+  :save crm
+%}
+
+
+{% assign customer_status =
+  crm.customer.status
+  | default: "unknown"
+%}
+
+{% assign account_type =
+  crm.customer.account_type
+  | default: "standard"
+%}
+
+{% assign customer_since =
+  crm.customer.created_at
+%}
+
+
+{% comment %}
+============================================================
+4. E-COMMERCE INTEGRATION
+============================================================
+Retrieve order and cart information.
+============================================================
+{% endcomment %}
+
+{% connected_content
+  https://commerce.example.com/api/customers/{{user_id}}
+  :method get
+  :headers {
+    "Authorization": "Bearer YOUR_COMMERCE_API_KEY",
+    "Content-Type": "application/json"
+  }
+  :cache_max_age 300
+  :save commerce
+%}
+
+
+{% assign total_orders =
+  commerce.orders_count
+  | default: 0
+%}
+
+{% assign cart_value =
+  commerce.cart.total
+  | default: 0
+%}
+
+{% assign last_order =
+  commerce.orders[0]
+%}
+
+
+{% comment %}
+============================================================
+5. LOYALTY SYSTEM INTEGRATION
+============================================================
+============================================================
+{% endcomment %}
+
+{% connected_content
+  https://loyalty.example.com/api/customers/{{user_id}}
+  :method get
+  :headers {
+    "Authorization": "Bearer YOUR_LOYALTY_API_KEY",
+    "Content-Type": "application/json"
+  }
+  :cache_max_age 300
+  :save loyalty
+%}
+
+
+{% assign loyalty_points =
+  loyalty.points
+  | default: 0
+%}
+
+{% assign loyalty_tier =
+  loyalty.tier
+  | default: "Member"
+%}
+
+
+{% comment %}
+============================================================
+6. CUSTOMER SUPPORT INTEGRATION
+============================================================
+Check for unresolved customer issues.
+============================================================
+{% endcomment %}
+
+{% connected_content
+  https://support.example.com/api/customers/{{user_id}}/status
+  :method get
+  :headers {
+    "Authorization": "Bearer YOUR_SUPPORT_API_KEY",
+    "Content-Type": "application/json"
+  }
+  :cache_max_age 300
+  :save support
+%}
+
+
+{% assign open_ticket =
+  support.open_ticket
+  | default: false
+%}
+
+
+{% comment %}
+============================================================
+7. RECOMMENDATION ENGINE
+============================================================
+============================================================
+{% endcomment %}
+
+{% connected_content
+  https://recommendations.example.com/api/users/{{user_id}}
+  :method get
+  :headers {
+    "Authorization": "Bearer YOUR_RECOMMENDATION_API_KEY",
+    "Content-Type": "application/json"
+  }
+  :cache_max_age 300
+  :save recommendations
+%}
+
+
+{% assign recommended_product =
+  recommendations.products[0]
+%}
+
+
+{% comment %}
+============================================================
+8. CUSTOMER VALUE CALCULATION
+============================================================
+============================================================
+{% endcomment %}
+
+{% assign customer_value = 0 %}
+
+{% if account_type == "premium" %}
+  {% assign customer_value = customer_value | plus: 100 %}
+{% endif %}
+
+{% if total_orders >= 10 %}
+  {% assign customer_value = customer_value | plus: 50 %}
+{% endif %}
+
+{% if loyalty_points >= 5000 %}
+  {% assign customer_value = customer_value | plus: 50 %}
+{% endif %}
+
+
+{% comment %}
+============================================================
+9. CUSTOMER SEGMENTATION ENGINE
+============================================================
+============================================================
+{% endcomment %}
+
+{% assign segment = "standard" %}
+
+{% if customer_value >= 150 %}
+  {% assign segment = "vip" %}
+
+{% elsif customer_value >= 100 %}
+  {% assign segment = "high_value" %}
+
+{% elsif total_orders >= 5 %}
+  {% assign segment = "active_customer" %}
+
+{% elsif total_orders == 0 %}
+  {% assign segment = "new_customer" %}
+{% endif %}
+
+
+{% comment %}
+============================================================
+10. COMMUNICATION PRIORITY ENGINE
+============================================================
+
+Priority:
+1. Support issue
+2. Abandoned cart
+3. VIP customer
+4. Loyalty customer
+5. Product recommendation
+6. General message
+============================================================
+{% endcomment %}
+
+{% assign communication_type = "general" %}
+
+
+{% if open_ticket == true %}
+
+  {% assign communication_type = "support" %}
+
+{% elsif cart_value > 0 %}
+
+  {% assign communication_type = "abandoned_cart" %}
+
+{% elsif segment == "vip" %}
+
+  {% assign communication_type = "vip" %}
+
+{% elsif loyalty_tier == "Gold" or loyalty_tier == "Platinum" %}
+
+  {% assign communication_type = "loyalty" %}
+
+{% elsif recommended_product %}
+
+  {% assign communication_type = "recommendation" %}
+
+{% endif %}
+
+
+{% comment %}
+============================================================
+11. FINAL PERSONALIZATION LAYER
+============================================================
+============================================================
+{% endcomment %}
+
+{% if valid_user == false %}
+
+  {% abort_message("Invalid user profile") %}
+
+
+{% elsif communication_type == "support" %}
+
+  Hi {{first_name}},
+
+  We noticed that you still have an open support request.
+  Our team is working on it and we'll keep you updated.
+
+
+{% elsif communication_type == "abandoned_cart" %}
+
+  Hi {{first_name}},
+
+  You still have items waiting in your cart.
+
+  {% if loyalty_points > 0 %}
+    You also have {{loyalty_points}} loyalty points available.
+  {% endif %}
+
+  Complete your order whenever you're ready.
+
+
+{% elsif communication_type == "vip" %}
+
+  Hi {{first_name}},
+
+  As one of our valued customers, we've selected something
+  special for you.
+
+  {% if recommended_product %}
+    We think you'll love {{recommended_product.name}}.
+  {% endif %}
+
+
+{% elsif communication_type == "loyalty" %}
+
+  Hi {{first_name}},
+
+  Your {{loyalty_tier}} membership gives you access to
+  exclusive benefits.
+
+  You currently have {{loyalty_points}} loyalty points.
+
+
+{% elsif communication_type == "recommendation" %}
+
+  Hi {{first_name}},
+
+  We found something we think you'll love:
+
+  {{recommended_product.name}}
+
+
+{% else %}
+
+  Hi {{first_name}},
+
+  We have something new for you.
+
+{% endif %}

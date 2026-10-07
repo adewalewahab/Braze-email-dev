@@ -1,0 +1,410 @@
+{% comment %}
+============================================================
+BRAZE REAL-TIME CUSTOMER JOURNEY ORCHESTRATION
+============================================================
+
+Purpose:
+- Identify the customer's current journey stage
+- Combine Braze profile and behavioral data
+- Integrate external systems
+- Determine the highest-priority customer action
+- Personalize the message accordingly
+
+SYSTEMS:
+1. Braze
+2. CRM
+3. Order Management System
+4. Subscription System
+5. Recommendation Engine
+============================================================
+{% endcomment %}
+
+
+{% comment %}
+------------------------------------------------------------
+1. BRAZE USER PROFILE
+------------------------------------------------------------
+{% endcomment %}
+
+{% assign user_id = ${user_id} %}
+{% assign first_name = ${first_name} | default: "Customer" %}
+{% assign email = ${email_address} | default: "" %}
+
+{% assign first_name = first_name | strip %}
+{% assign email = email | strip | downcase %}
+
+
+{% comment %}
+------------------------------------------------------------
+2. BRAZE BEHAVIORAL DATA
+------------------------------------------------------------
+These attributes/events would normally be populated
+from Braze custom events and custom attributes.
+------------------------------------------------------------
+{% endcomment %}
+
+{% assign viewed_product =
+  ${custom_attribute.${last_viewed_product}}
+%}
+
+{% assign viewed_category =
+  ${custom_attribute.${last_viewed_category}}
+%}
+
+{% assign cart_value =
+  ${custom_attribute.${cart_value}}
+  | default: 0
+%}
+
+{% assign engagement_score =
+  ${custom_attribute.${engagement_score}}
+  | default: 0
+%}
+
+
+{% comment %}
+------------------------------------------------------------
+3. CRM INTEGRATION
+------------------------------------------------------------
+Retrieve customer lifecycle information.
+------------------------------------------------------------
+{% endcomment %}
+
+{% connected_content
+  https://crm.example.com/api/customers/{{user_id}}
+  :method get
+  :headers {
+    "Authorization": "Bearer CRM_API_KEY",
+    "Content-Type": "application/json"
+  }
+  :cache_max_age 300
+  :save crm
+%}
+
+{% assign lifecycle_stage =
+  crm.lifecycle_stage
+  | default: "unknown"
+%}
+
+{% assign customer_status =
+  crm.status
+  | default: "active"
+%}
+
+
+{% comment %}
+------------------------------------------------------------
+4. ORDER MANAGEMENT SYSTEM
+------------------------------------------------------------
+Retrieve order history.
+------------------------------------------------------------
+{% endcomment %}
+
+{% connected_content
+  https://orders.example.com/api/customers/{{user_id}}/summary
+  :method get
+  :headers {
+    "Authorization": "Bearer ORDER_API_KEY",
+    "Content-Type": "application/json"
+  }
+  :cache_max_age 300
+  :save orders
+%}
+
+{% assign order_count =
+  orders.total_orders
+  | default: 0
+%}
+
+{% assign last_order_status =
+  orders.last_order.status
+  | default: ""
+%}
+
+{% assign last_order_product =
+  orders.last_order.product_name
+  | default: ""
+%}
+
+
+{% comment %}
+------------------------------------------------------------
+5. SUBSCRIPTION SYSTEM
+------------------------------------------------------------
+------------------------------------------------------------
+{% endcomment %}
+
+{% connected_content
+  https://subscriptions.example.com/api/users/{{user_id}}
+  :method get
+  :headers {
+    "Authorization": "Bearer SUBSCRIPTION_API_KEY",
+    "Content-Type": "application/json"
+  }
+  :cache_max_age 300
+  :save subscription
+%}
+
+{% assign subscription_status =
+  subscription.status
+  | default: "none"
+%}
+
+{% assign subscription_plan =
+  subscription.plan
+  | default: ""
+%}
+
+{% assign renewal_date =
+  subscription.renewal_date
+  | default: ""
+%}
+
+
+{% comment %}
+------------------------------------------------------------
+6. RECOMMENDATION ENGINE
+------------------------------------------------------------
+------------------------------------------------------------
+{% endcomment %}
+
+{% connected_content
+  https://recommendations.example.com/api/users/{{user_id}}
+  :method get
+  :headers {
+    "Authorization": "Bearer RECOMMENDATION_API_KEY",
+    "Content-Type": "application/json"
+  }
+  :cache_max_age 300
+  :save recommendations
+%}
+
+{% assign recommendation =
+  recommendations.items[0]
+%}
+
+
+{% comment %}
+------------------------------------------------------------
+7. CUSTOMER JOURNEY CLASSIFICATION
+------------------------------------------------------------
+------------------------------------------------------------
+{% endcomment %}
+
+{% assign journey_stage = "general" %}
+
+
+{% if lifecycle_stage == "new" %}
+
+  {% assign journey_stage = "onboarding" %}
+
+
+{% elsif order_count == 0 and cart_value > 0 %}
+
+  {% assign journey_stage = "cart_recovery" %}
+
+
+{% elsif last_order_status == "delivered" %}
+
+  {% assign journey_stage = "post_purchase" %}
+
+
+{% elsif subscription_status == "active" %}
+
+  {% assign journey_stage = "subscriber" %}
+
+
+{% elsif subscription_status == "cancelled" %}
+
+  {% assign journey_stage = "winback" %}
+
+
+{% elsif engagement_score >= 80 %}
+
+  {% assign journey_stage = "high_engagement" %}
+
+
+{% elsif engagement_score <= 20 %}
+
+  {% assign journey_stage = "low_engagement" %}
+
+{% endif %}
+
+
+{% comment %}
+------------------------------------------------------------
+8. PRIORITY OVERRIDE ENGINE
+------------------------------------------------------------
+
+Some customer situations should always take priority.
+------------------------------------------------------------
+{% endcomment %}
+
+{% assign priority = 1 %}
+
+
+{% if last_order_status == "failed" %}
+
+  {% assign priority = 100 %}
+
+{% elsif subscription_status == "cancelled" %}
+
+  {% assign priority = 90 %}
+
+{% elsif cart_value > 0 %}
+
+  {% assign priority = 80 %}
+
+{% elsif journey_stage == "post_purchase" %}
+
+  {% assign priority = 70 %}
+
+{% elsif journey_stage == "onboarding" %}
+
+  {% assign priority = 60 %}
+
+{% endif %}
+
+
+{% comment %}
+------------------------------------------------------------
+9. MESSAGE DECISION ENGINE
+------------------------------------------------------------
+------------------------------------------------------------
+{% endcomment %}
+
+{% assign message_type = "general" %}
+
+
+{% if priority >= 100 %}
+
+  {% assign message_type = "payment_issue" %}
+
+
+{% elsif priority >= 90 %}
+
+  {% assign message_type = "winback" %}
+
+
+{% elsif priority >= 80 %}
+
+  {% assign message_type = "cart_recovery" %}
+
+
+{% elsif priority >= 70 %}
+
+  {% assign message_type = "post_purchase" %}
+
+
+{% elsif priority >= 60 %}
+
+  {% assign message_type = "onboarding" %}
+
+
+{% elsif journey_stage == "high_engagement" %}
+
+  {% assign message_type = "recommendation" %}
+
+
+{% elsif journey_stage == "low_engagement" %}
+
+  {% assign message_type = "re_engagement" %}
+
+{% endif %}
+
+
+{% comment %}
+------------------------------------------------------------
+10. FINAL PERSONALIZATION
+------------------------------------------------------------
+------------------------------------------------------------
+{% endcomment %}
+
+{% if customer_status != "active" %}
+
+  {% abort_message("Inactive customer profile") %}
+
+
+{% elsif message_type == "payment_issue" %}
+
+  Hi {{first_name}},
+
+  We couldn't complete your recent order.
+
+  Please review your payment details and try again.
+
+
+{% elsif message_type == "winback" %}
+
+  Hi {{first_name}},
+
+  We noticed that your subscription has ended.
+
+  We'd love to have you back.
+
+  Here's something special to help you return.
+
+
+{% elsif message_type == "cart_recovery" %}
+
+  Hi {{first_name}},
+
+  You still have items waiting in your cart.
+
+  {% if viewed_product %}
+    You were recently looking at {{viewed_product}}.
+  {% endif %}
+
+  Complete your purchase whenever you're ready.
+
+
+{% elsif message_type == "post_purchase" %}
+
+  Hi {{first_name}},
+
+  We hope you're enjoying your recent purchase of
+  {{last_order_product}}.
+
+  {% if recommendation %}
+    You might also like {{recommendation.name}}.
+  {% endif %}
+
+
+{% elsif message_type == "onboarding" %}
+
+  Hi {{first_name}},
+
+  Welcome!
+
+  Let's get you started and help you get the most
+  out of your account.
+
+
+{% elsif message_type == "recommendation" %}
+
+  Hi {{first_name}},
+
+  Based on what you've been browsing, we think you'll
+  love this:
+
+  {% if recommendation %}
+    {{recommendation.name}}
+  {% endif %}
+
+
+{% elsif message_type == "re_engagement" %}
+
+  Hi {{first_name}},
+
+  It's been a while since we've seen you.
+
+  We've found something we think might interest you.
+
+
+{% else %}
+
+  Hi {{first_name}},
+
+  We have something new for you.
+
+{% endif %}

@@ -1,0 +1,227 @@
+{% comment %}
+========================================================
+BRAZE USER PROFILE + DATA EXTRACTION
+========================================================
+
+Purpose:
+- Pull first name
+- Pull email address
+- Pull user ID
+- Pull profile attributes
+- Pull custom attributes
+- Pull behavioral/event data
+- Apply filtering
+- Prevent duplicate values
+- Provide fallbacks for missing data
+========================================================
+{% endcomment %}
+
+
+{% comment %}
+--------------------------------------------------------
+1. BASIC USER PROFILE
+--------------------------------------------------------
+{% endcomment %}
+
+{% assign user_id = ${user_id} %}
+{% assign first_name = ${first_name} | default: "Customer" %}
+{% assign email = ${email_address} | default: "" %}
+
+
+{% comment %}
+--------------------------------------------------------
+2. CLEAN FIRST NAME
+--------------------------------------------------------
+Remove unwanted whitespace and provide fallback.
+--------------------------------------------------------
+{% endcomment %}
+
+{% assign first_name = first_name | strip %}
+
+{% if first_name == blank %}
+  {% assign first_name = "Customer" %}
+{% endif %}
+
+
+{% comment %}
+--------------------------------------------------------
+3. NORMALIZE EMAIL
+--------------------------------------------------------
+--------------------------------------------------------
+{% endcomment %}
+
+{% assign normalized_email = email | strip | downcase %}
+
+
+{% comment %}
+--------------------------------------------------------
+4. USER PROFILE ATTRIBUTES
+--------------------------------------------------------
+--------------------------------------------------------
+{% endcomment %}
+
+{% assign country = ${country} | default: "" %}
+{% assign language = ${language} | default: "en" %}
+{% assign city = ${home_city} | default: "" %}
+{% assign gender = ${gender} | default: "" %}
+
+
+{% comment %}
+--------------------------------------------------------
+5. CUSTOM USER DATA
+--------------------------------------------------------
+--------------------------------------------------------
+{% endcomment %}
+
+{% assign customer_type =
+  ${custom_attribute.${customer_type}}
+  | default: "standard"
+%}
+
+{% assign loyalty_tier =
+  ${custom_attribute.${loyalty_tier}}
+  | default: "none"
+%}
+
+{% assign lifetime_value =
+  ${custom_attribute.${lifetime_value}}
+  | default: 0
+%}
+
+
+{% comment %}
+--------------------------------------------------------
+6. FILTER INVALID USERS
+--------------------------------------------------------
+Don't continue personalization if critical data
+is missing.
+--------------------------------------------------------
+{% endcomment %}
+
+{% assign valid_user = true %}
+
+{% if user_id == blank %}
+  {% assign valid_user = false %}
+{% endif %}
+
+{% if normalized_email == blank %}
+  {% assign valid_user = false %}
+{% endif %}
+
+
+{% comment %}
+--------------------------------------------------------
+7. EMAIL VALIDATION
+--------------------------------------------------------
+Basic validation to prevent obvious bad addresses.
+--------------------------------------------------------
+{% endcomment %}
+
+{% if normalized_email contains "@" %}
+  {% assign valid_email = true %}
+{% else %}
+  {% assign valid_email = false %}
+{% endif %}
+
+
+{% if valid_email == false %}
+  {% assign valid_user = false %}
+{% endif %}
+
+
+{% comment %}
+--------------------------------------------------------
+8. DUPLICATE PREVENTION
+--------------------------------------------------------
+
+At the message level, Braze already evaluates a user once
+for a given campaign/message.
+
+We create a normalized unique key so downstream logic
+treats differently formatted versions of the same email
+as the same identifier.
+--------------------------------------------------------
+{% endcomment %}
+
+{% assign unique_user_key =
+  normalized_email
+  | append: "|"
+  | append: user_id
+%}
+
+
+{% comment %}
+--------------------------------------------------------
+9. REMOVE DUPLICATE PROFILE VALUES
+--------------------------------------------------------
+
+Example:
+If first name and city accidentally contain the same
+value, don't display the same information twice.
+--------------------------------------------------------
+{% endcomment %}
+
+{% assign display_location = "" %}
+
+{% if city != blank and city != first_name %}
+  {% assign display_location = city %}
+{% endif %}
+
+
+{% comment %}
+--------------------------------------------------------
+10. CUSTOMER SEGMENTATION
+--------------------------------------------------------
+--------------------------------------------------------
+{% endcomment %}
+
+{% assign segment = "standard" %}
+
+{% if lifetime_value >= 500000 %}
+  {% assign segment = "vip" %}
+
+{% elsif lifetime_value >= 100000 %}
+  {% assign segment = "high_value" %}
+
+{% elsif customer_type == "business" %}
+  {% assign segment = "business" %}
+
+{% elsif loyalty_tier == "gold" or loyalty_tier == "platinum" %}
+  {% assign segment = "loyal_customer" %}
+{% endif %}
+
+
+{% comment %}
+--------------------------------------------------------
+11. FINAL FILTER
+--------------------------------------------------------
+Only continue if the user has valid required data.
+--------------------------------------------------------
+{% endcomment %}
+
+{% if valid_user %}
+
+  {% comment %}
+  USER PROFILE OUTPUT
+  {% endcomment %}
+
+  User ID: {{ user_id }}
+  First Name: {{ first_name }}
+  Email: {{ normalized_email }}
+
+  {% if display_location != blank %}
+    Location: {{ display_location }}
+  {% endif %}
+
+  Segment: {{ segment }}
+
+{% else %}
+
+  {% comment %}
+  User excluded because required information is missing
+  or invalid.
+  {% endcomment %}
+
+  {% abort_message("User excluded: invalid or incomplete profile") %}
+
+{% endif %}

@@ -1,0 +1,89 @@
+{% comment %}
+============================================================
+BRAZE MULTI-CHANNEL ELIGIBILITY ENGINE
+============================================================
+{% endcomment %}
+
+{% assign user_id = ${user_id} %}
+{% assign first_name = ${first_name} | default: "Customer" %}
+{% assign email = ${email_address} | default: "" %}
+
+{% assign email_opt_in = ${custom_attribute.${email_opt_in}} %}
+{% assign sms_opt_in = ${custom_attribute.${sms_opt_in}} %}
+{% assign push_opt_in = ${custom_attribute.${push_opt_in}} %}
+
+{% assign customer_status =
+  ${custom_attribute.${customer_status}}
+  | default: "active"
+%}
+
+{% assign engagement_score =
+  ${custom_attribute.${engagement_score}}
+  | default: 0
+%}
+
+
+{% comment %}
+------------------------------------------------------------
+CHANNEL SELECTION
+------------------------------------------------------------
+------------------------------------------------------------
+{% endcomment %}
+
+{% assign preferred_channel = "none" %}
+
+{% if push_opt_in == true and engagement_score >= 60 %}
+
+  {% assign preferred_channel = "push" %}
+
+{% elsif email_opt_in == true and email != blank %}
+
+  {% assign preferred_channel = "email" %}
+
+{% elsif sms_opt_in == true %}
+
+  {% assign preferred_channel = "sms" %}
+
+{% endif %}
+
+
+{% comment %}
+------------------------------------------------------------
+CUSTOMER EXCLUSION
+------------------------------------------------------------
+{% endcomment %}
+
+{% assign eligible = true %}
+
+{% if customer_status != "active" %}
+  {% assign eligible = false %}
+{% endif %}
+
+
+{% comment %}
+------------------------------------------------------------
+FINAL DECISION
+------------------------------------------------------------
+{% endcomment %}
+
+{% if eligible == false %}
+
+  {% abort_message("Customer is not eligible") %}
+
+{% elsif preferred_channel == "push" %}
+
+  Hi {{first_name}}, we have something new for you.
+
+{% elsif preferred_channel == "email" %}
+
+  Hi {{first_name}}, we've selected something special for you.
+
+{% elsif preferred_channel == "sms" %}
+
+  Hi {{first_name}}, your personalized offer is waiting for you.
+
+{% else %}
+
+  {% abort_message("No eligible communication channel") %}
+
+{% endif %}
